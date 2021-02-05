@@ -42,6 +42,9 @@ namespace Maersk.Sorting.Api
             return IsSubmitted;
         }
 
+        /// <summary>
+        /// This method is to perform background process.
+        /// </summary>
         private async void BackgroundProcess()
         {
             _logger.LogInformation("Processing background jobs");
@@ -78,6 +81,11 @@ namespace Maersk.Sorting.Api
             }
         }
 
+        /// <summary>
+        /// This method is to proccess the sort job queue.
+        /// </summary>
+        /// <param name="job"></param>
+        /// <returns></returns>
         public async Task<SortJob> Process(SortJob job)
         {
             if (job.Status == SortJobStatus.Pending)
@@ -105,12 +113,21 @@ namespace Maersk.Sorting.Api
             return job;
         }
 
+        /// <summary>
+        /// This method is to get all sort jobs.
+        /// </summary>
+        /// <returns></returns>
         public SortJob[] GetAllSortJobs()
         {
             // return all the items from memory cache.
             return _jobQueue.ToArray();
         }
 
+        /// <summary>
+        /// This method is to get sort job by id.
+        /// </summary>
+        /// <param name="jobId"></param>
+        /// <returns></returns>
         public SortJob GetSortJobById(Guid jobId)
         {
             return _memoryCache.Get<SortJob>(jobId);
