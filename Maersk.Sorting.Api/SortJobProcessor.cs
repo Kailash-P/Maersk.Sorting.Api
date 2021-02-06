@@ -2,8 +2,10 @@
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 
 namespace Maersk.Sorting.Api
@@ -29,16 +31,21 @@ namespace Maersk.Sorting.Api
         public bool SubmitJob(SortJob job)
         {
             bool IsSubmitted = false;
-
-            _logger.LogInformation("Pushing job into concurrent queue with ID '{JobId}'.", job.Id);
-
-            if (!_jobQueue.Any(x => x.Id == job.Id))
+            try
             {
-                _memoryCache.Set(job.Id, job);
-                _jobQueue.Enqueue(job);
-                IsSubmitted = true;
-            }
+                _logger.LogInformation("Pushing job into concurrent queue with ID '{JobId}'.", job.Id);
 
+                if (!_jobQueue.Any(x => x.Id == job.Id))
+                {
+                    _memoryCache.Set(job.Id, job);
+                    _jobQueue.Enqueue(job);
+                    IsSubmitted = true;
+                }
+            }
+            catch (Exception)
+            {
+                throw;
+            }
             return IsSubmitted;
         }
 
@@ -58,21 +65,20 @@ namespace Maersk.Sorting.Api
                 else
                 {
                     SortJob? jobInQueue;
-                    if(!_jobQueue.TryPeek(out jobInQueue))
+                    if (!_jobQueue.TryPeek(out jobInQueue))
                     {
                         _logger.LogInformation("Error in peeking job in queue.");
                     }
                     else
                     {
-                       var response = await Process(jobInQueue);
-
-                        if (jobInQueue.Status != response.Status)
+                        var response = await Process(jobInQueue);
+                        if (_jobQueue.TryDequeue(out _))
                         {
-                            if (_jobQueue.TryDequeue(out SortJob? dequeueJob))
-                            {
-                                _memoryCache.Remove(response.Id);
-                                _logger.LogInformation("De queueing the job to update the status.");
-                            }
+                            _logger.LogInformation("Removing the job in memory cache to update the status.");
+
+                            _memoryCache.Remove(response.Id);
+
+                            _logger.LogInformation("Adding the job in memory cache with updated status.");
 
                             _memoryCache.Set(response.Id, response);
                         }
@@ -88,29 +94,24 @@ namespace Maersk.Sorting.Api
         /// <returns></returns>
         public async Task<SortJob> Process(SortJob job)
         {
-            if (job.Status == SortJobStatus.Pending)
-            {
-                _logger.LogInformation("Processing job with ID '{JobId}'.", job.Id);
+            _logger.LogInformation("Processing job with ID '{JobId}'.", job.Id);
 
-                var stopwatch = Stopwatch.StartNew();
+            var stopwatch = Stopwatch.StartNew();
 
-                var output = job.Input.OrderBy(n => n).ToArray();
-                await Task.Delay(1); // NOTE: This is just to simulate a more expensive operation
+            var output = job.Input.OrderBy(n => n).ToArray();
+            await Task.Delay(1); // NOTE: This is just to simulate a more expensive operation
 
-                var duration = stopwatch.Elapsed;
+            var duration = stopwatch.Elapsed;
 
-                _logger.LogInformation("Completed processing job with ID '{JobId}'. Duration: '{Duration}'.", job.Id, duration);
+            _logger.LogInformation("Completed processing job with ID '{JobId}'. Duration: '{Duration}'.", job.Id, duration);
 
 
-                return new SortJob(
-                    id: job.Id,
-                    status: SortJobStatus.Completed,
-                    duration: duration,
-                    input: job.Input,
-                    output: output);
-            }
-
-            return job;
+            return new SortJob(
+                id: job.Id,
+                status: SortJobStatus.Completed,
+                duration: duration,
+                input: job.Input,
+                output: output);
         }
 
         /// <summary>
@@ -119,8 +120,30 @@ namespace Maersk.Sorting.Api
         /// <returns></returns>
         public SortJob[] GetAllSortJobs()
         {
-            // return all the items from memory cache.
-            return _jobQueue.ToArray();
+            try
+            {
+                var cacheEntriesCollectionDefinition = typeof(MemoryCache).GetProperty("EntriesCollection", BindingFlags.NonPublic | BindingFlags.Instance);
+                var cacheEntriesCollection = cacheEntriesCollectionDefinition?.GetValue(_memoryCache) as dynamic;
+                List<ICacheEntry> cacheCollectionValues = new List<ICacheEntry>();
+
+                if (cacheEntriesCollection != null)
+                {
+                    foreach (var cacheItem in cacheEntriesCollection)
+                    {
+                        if (cacheItem != null)
+                        {
+                            ICacheEntry cacheItemValue = cacheItem.GetType().GetProperty("Value").GetValue(cacheItem, null);
+                            cacheCollectionValues.Add(cacheItemValue);
+                        }
+                    }
+                }
+
+                return cacheCollectionValues != null ? cacheCollectionValues.Select(s => (SortJob)s.Value).ToArray() : new SortJob[] { };
+            }
+            catch (Exception)
+            {
+                throw;
+            }           
         }
 
         /// <summary>
@@ -130,7 +153,14 @@ namespace Maersk.Sorting.Api
         /// <returns></returns>
         public SortJob GetSortJobById(Guid jobId)
         {
-            return _memoryCache.Get<SortJob>(jobId);
+            try
+            {
+                return _memoryCache.Get<SortJob>(jobId);
+            }
+            catch (Exception)
+            {
+                throw;
+            }
         }
     }
 }

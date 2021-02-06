@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using System;
+using System.Net;
 using System.Threading.Tasks;
 
 namespace Maersk.Sorting.Api.Controllers
@@ -34,32 +35,60 @@ namespace Maersk.Sorting.Api.Controllers
         [HttpPost]
         public async Task<ActionResult<SortJob>> EnqueueJob(int[] values)
         {
-            var pendingJob = new SortJob(
+            try
+            {
+                var pendingJob = new SortJob(
                 id: Guid.NewGuid(),
                 status: SortJobStatus.Pending,
                 duration: null,
                 input: values,
                 output: null);
 
-            await Task.Run(() => _sortJobProcessor.SubmitJob(pendingJob));
+                await Task.Run(() => _sortJobProcessor.SubmitJob(pendingJob));
 
-            return Ok(pendingJob);
+                return Ok(pendingJob);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode((int)HttpStatusCode.InternalServerError, ex.Message);
+            }
         }
 
         [HttpGet]
         public async Task<ActionResult<SortJob[]>> GetJobs()
         {
-            var response = await Task.Run(() => _sortJobProcessor.GetAllSortJobs());
+            try
+            {
+                var response = await Task.Run(() => _sortJobProcessor.GetAllSortJobs());
 
-            return Ok(response);
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode((int)HttpStatusCode.InternalServerError, ex.Message);
+            }
         }
 
         [HttpGet("{jobId}")]
         public async Task<ActionResult<SortJob>> GetJob(Guid jobId)
         {
-            var response = await Task.Run(() => _sortJobProcessor.GetSortJobById(jobId));
+            try
+            {
+                var response = await Task.Run(() => _sortJobProcessor.GetSortJobById(jobId));
 
-            return Ok(response);
+                if(response != null)
+                {
+                    return Ok(response);
+                }
+                else
+                {
+                    return StatusCode((int)HttpStatusCode.NotFound, "Invalid Job Id.");
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode((int)HttpStatusCode.InternalServerError, ex.Message);
+            }
         }
     }
 }
